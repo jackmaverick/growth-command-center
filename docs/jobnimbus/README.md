@@ -146,6 +146,11 @@ python scripts/calculate_revenue.py YOUR_TOKEN
 ### 5. Review Architecture
 [System Architecture](./technical/ARCHITECTURE.md) - See how it all fits together
 
+### 6. Webhook Ingestion (no n8n)
+- Point the JobNimbus "Job modified" automation (POST) to `/api/webhooks/jobnimbus`.
+- Add env vars: `POSTGRES_URL` (Neon/Vercel connection string) and optional `JOBNIMBUS_WEBHOOK_SECRET` (set the same value in the JN webhook header `X-JN-Secret`).
+- The webhook handler filters to `record_type_name = "Roof Replacement"`, derives stage, upserts into `jobs`, and appends to `job_status_history`.
+
 ---
 
 ## 📈 Current Status
