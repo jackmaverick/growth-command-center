@@ -44,3 +44,4 @@ next-env.d.ts
 debug_velocity.json
 error.json
 error_check.json
+.env*.local
