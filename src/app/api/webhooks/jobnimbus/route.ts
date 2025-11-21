@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getPool } from "@/lib/db";
+import { sql } from "@/lib/db";
 
 export const runtime = "nodejs";
 
@@ -57,12 +57,9 @@ export async function POST(request: NextRequest) {
 
         const stage = stageMap[job.status_name] || "Unknown";
 
-        const pool = getPool();
-        const client = await pool.connect();
-
-        const tags = Array.isArray(job.tags) ? job.tags : [];
-        const owners = Array.isArray(job.owners) ? job.owners : [];
-        const ownerIds = owners.map((o: any) => o?.id ?? o);
+        const tags: string[] = Array.isArray(job.tags) ? job.tags : [];
+        const owners: any[] = Array.isArray(job.owners) ? job.owners : [];
+        const ownerIds: string[] = owners.map((o: any) => o?.id ?? o).filter(Boolean);
 
         const dateCreated = toDate(job.date_created);
         const dateStatusChange = toDate(job.date_status_change ?? job.date_updated ?? job.date_created);
@@ -71,11 +68,8 @@ export async function POST(request: NextRequest) {
         const isClosed = ["Completed", "Lost"].includes(stage);
         const isLost = stage === "Lost";
 
-        try {
-            await client.query("BEGIN");
-
-            await client.query(
-                `
+        await sql.begin(async (tx) => {
+            await tx`
                 INSERT INTO jobs (
                     id, number, record_type_name, status_name, stage,
                     primary_contact_id, sales_rep_id, source_name,
@@ -83,11 +77,11 @@ export async function POST(request: NextRequest) {
                     tags, owners, raw, updated_at,
                     is_won, is_closed, is_lost
                 ) VALUES (
-                    $1, $2, $3, $4, $5,
-                    $6, $7, $8,
-                    $9, $10,
-                    $11, $12, $13, NOW(),
-                    $14, $15, $16
+                    ${job.jnid}, ${job.number ?? null}, ${job.record_type_name ?? null}, ${job.status_name ?? null}, ${stage},
+                    ${job.primary?.id ?? null}, ${job.sales_rep ?? job.sales_rep_name ?? null}, ${job.source_name ?? null},
+                    ${dateCreated}, ${dateStatusChange},
+                    ${tags}, ${ownerIds}, ${job}, NOW(),
+                    ${isWon}, ${isClosed}, ${isLost}
                 )
                 ON CONFLICT (id) DO UPDATE SET
                     status_name = EXCLUDED.status_name,
@@ -103,42 +97,13 @@ export async function POST(request: NextRequest) {
                     is_lost = EXCLUDED.is_lost,
                     raw = EXCLUDED.raw,
                     updated_at = NOW()
-            `,
-                [
-                    job.jnid,
-                    job.number ?? null,
-                    job.record_type_name ?? null,
-                    job.status_name ?? null,
-                    stage,
-                    job.primary?.id ?? null,
-                    job.sales_rep ?? job.sales_rep_name ?? null,
-                    job.source_name ?? null,
-                    dateCreated,
-                    dateStatusChange,
-                    JSON.stringify(tags),
-                    JSON.stringify(ownerIds),
-                    job,
-                    isWon,
-                    isClosed,
-                    isLost,
-                ],
-            );
+            `;
 
-            await client.query(
-                `
+            await tx`
                 INSERT INTO job_status_history (job_id, status_name, stage, changed_at)
-                VALUES ($1, $2, $3, $4)
-            `,
-                [job.jnid, job.status_name ?? null, stage, dateStatusChange],
-            );
-
-            await client.query("COMMIT");
-        } catch (dbErr) {
-            await client.query("ROLLBACK");
-            throw dbErr;
-        } finally {
-            client.release();
-        }
+                VALUES (${job.jnid}, ${job.status_name ?? null}, ${stage}, ${dateStatusChange})
+            `;
+        });
 
         return NextResponse.json({ ok: true, stage });
     } catch (error) {
