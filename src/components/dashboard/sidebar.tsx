@@ -10,10 +10,12 @@ import {
     BarChart3,
     Settings,
     Phone,
+    Layers,
 } from "lucide-react";
 
 const navigation = [
     { name: "Dashboard", href: "/", icon: LayoutDashboard },
+    { name: "Job Types", href: "/job-types", icon: Layers },
     { name: "Leads & Contacts", href: "/contacts", icon: Users },
     { name: "Jobs & Estimates", href: "/jobs", icon: Briefcase },
     { name: "Marketing", href: "/marketing", icon: BarChart3 },
@@ -34,7 +36,7 @@ export function Sidebar() {
             <div className="flex-1 overflow-y-auto py-4">
                 <nav className="space-y-1 px-2">
                     {navigation.map((item) => {
-                        const isActive = pathname === item.href;
+                        const isActive = pathname === item.href || pathname.startsWith(`${item.href}/`);
                         return (
                             <Link
                                 key={item.name}

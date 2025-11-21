@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { sql } from "@/lib/db";
+import { getPool } from "@/lib/db";
 
 export const runtime = "nodejs";
 
@@ -57,6 +57,9 @@ export async function POST(request: NextRequest) {
 
         const stage = stageMap[job.status_name] || "Unknown";
 
+        const pool = getPool();
+        const client = await pool.connect();
+
         const tags: string[] = Array.isArray(job.tags) ? job.tags : [];
         const owners: any[] = Array.isArray(job.owners) ? job.owners : [];
         const ownerIds: string[] = owners.map((o: any) => o?.id ?? o).filter(Boolean);
@@ -68,8 +71,11 @@ export async function POST(request: NextRequest) {
         const isClosed = ["Completed", "Lost"].includes(stage);
         const isLost = stage === "Lost";
 
-        await sql.begin(async (tx) => {
-            await tx`
+        try {
+            await client.query("BEGIN");
+
+            await client.query(
+                `
                 INSERT INTO jobs (
                     id, number, record_type_name, status_name, stage,
                     primary_contact_id, sales_rep_id, source_name,
@@ -77,11 +83,11 @@ export async function POST(request: NextRequest) {
                     tags, owners, raw, updated_at,
                     is_won, is_closed, is_lost
                 ) VALUES (
-                    ${job.jnid}, ${job.number ?? null}, ${job.record_type_name ?? null}, ${job.status_name ?? null}, ${stage},
-                    ${job.primary?.id ?? null}, ${job.sales_rep ?? job.sales_rep_name ?? null}, ${job.source_name ?? null},
-                    ${dateCreated}, ${dateStatusChange},
-                    ${tags}, ${ownerIds}, ${job}, NOW(),
-                    ${isWon}, ${isClosed}, ${isLost}
+                    $1, $2, $3, $4, $5,
+                    $6, $7, $8,
+                    $9, $10,
+                    $11, $12, $13, NOW(),
+                    $14, $15, $16
                 )
                 ON CONFLICT (id) DO UPDATE SET
                     status_name = EXCLUDED.status_name,
@@ -97,13 +103,42 @@ export async function POST(request: NextRequest) {
                     is_lost = EXCLUDED.is_lost,
                     raw = EXCLUDED.raw,
                     updated_at = NOW()
-            `;
+            `,
+                [
+                    job.jnid,
+                    job.number ?? null,
+                    job.record_type_name ?? null,
+                    job.status_name ?? null,
+                    stage,
+                    job.primary?.id ?? null,
+                    job.sales_rep ?? job.sales_rep_name ?? null,
+                    job.source_name ?? null,
+                    dateCreated,
+                    dateStatusChange,
+                    tags,
+                    ownerIds,
+                    job,
+                    isWon,
+                    isClosed,
+                    isLost,
+                ],
+            );
 
-            await tx`
+            await client.query(
+                `
                 INSERT INTO job_status_history (job_id, status_name, stage, changed_at)
-                VALUES (${job.jnid}, ${job.status_name ?? null}, ${stage}, ${dateStatusChange})
-            `;
-        });
+                VALUES ($1, $2, $3, $4)
+            `,
+                [job.jnid, job.status_name ?? null, stage, dateStatusChange],
+            );
+
+            await client.query("COMMIT");
+        } catch (dbErr) {
+            await client.query("ROLLBACK");
+            throw dbErr;
+        } finally {
+            client.release();
+        }
 
         return NextResponse.json({ ok: true, stage });
     } catch (error) {

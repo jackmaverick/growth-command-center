@@ -1,11 +1,13 @@
 import { NextResponse } from "next/server";
-import { sql } from "@/lib/db";
+import { getPool } from "@/lib/db";
 
 export const runtime = "nodejs";
 
 export async function GET() {
     try {
-        const aggregates = await sql`
+        const pool = getPool();
+
+        const aggregatesResult = await pool.query(`
             SELECT
                 record_type_name,
                 COUNT(*) AS total_jobs,
@@ -19,9 +21,9 @@ export async function GET() {
             FROM jobs
             GROUP BY record_type_name
             ORDER BY record_type_name;
-        `;
+        `);
 
-        const velocity = await sql`
+        const velocityResult = await pool.query(`
             WITH lead_times AS (
                 SELECT
                     j.record_type_name,
@@ -38,9 +40,9 @@ export async function GET() {
             FROM lead_times
             WHERE lead_at IS NOT NULL AND sold_at IS NOT NULL
             GROUP BY record_type_name;
-        `;
+        `);
 
-        const history = await sql`
+        const historyResult = await pool.query(`
             SELECT
                 j.record_type_name,
                 h.job_id,
@@ -50,7 +52,7 @@ export async function GET() {
             JOIN jobs j ON j.id = h.job_id
             WHERE j.record_type_name IS NOT NULL
             ORDER BY h.job_id, h.changed_at
-        `;
+        `);
 
         const statusFlow = [
             "Lead",
@@ -71,7 +73,7 @@ export async function GET() {
         const conversionMap = new Map<string, Map<string, ConversionCounts>>();
 
         // Initialize map for each record type we have aggregates for
-        (aggregates.rows ?? []).forEach((row) => {
+        (aggregatesResult.rows ?? []).forEach((row) => {
             const rt = row.record_type_name;
             const steps = new Map<string, ConversionCounts>();
             for (let i = 0; i < statusFlow.length - 1; i++) {
@@ -83,7 +85,7 @@ export async function GET() {
 
         // Build status sequences per job
         const jobHistory = new Map<string, { recordType: string; statuses: string[] }>();
-        (history.rows ?? []).forEach((row) => {
+        (historyResult.rows ?? []).forEach((row) => {
             const jobId = row.job_id as string;
             const recordType = row.record_type_name as string;
             if (!jobHistory.has(jobId)) {
@@ -114,11 +116,11 @@ export async function GET() {
         });
 
         const velocityMap = new Map<string, number>();
-        (velocity.rows ?? []).forEach((row) => {
+        (velocityResult.rows ?? []).forEach((row) => {
             velocityMap.set(row.record_type_name, Number(row.avg_days_to_sold));
         });
 
-        const result = (aggregates.rows ?? []).map((row) => {
+        const result = (aggregatesResult.rows ?? []).map((row) => {
             const leads = Number(row.leads) || 0;
             const sold = Number(row.sold) || 0;
             const completed = Number(row.completed) || 0;

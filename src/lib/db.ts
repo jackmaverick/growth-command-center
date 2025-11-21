@@ -1,12 +1,19 @@
-import { neon } from "@neondatabase/serverless";
-import { drizzle } from "drizzle-orm/neon-http";
-import * as schema from "./schema";
+import { Pool } from "pg";
 
-const connectionString = process.env.DATABASE_URL;
+let pool: Pool | null = null;
 
-if (!connectionString) {
-    throw new Error("DATABASE_URL is not set");
+export function getPool() {
+    if (pool) return pool;
+
+    const connectionString = process.env.POSTGRES_URL || process.env.DATABASE_URL;
+    if (!connectionString) {
+        throw new Error("POSTGRES_URL / DATABASE_URL is not set");
+    }
+
+    pool = new Pool({
+        connectionString,
+        ssl: { rejectUnauthorized: false },
+    });
+
+    return pool;
 }
-
-export const sql = neon(connectionString);
-export const db = drizzle(sql, { schema });
