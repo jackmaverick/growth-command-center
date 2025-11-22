@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 
@@ -60,15 +61,18 @@ export default function JobTypesPage() {
       {error && <div className="text-sm text-red-400">Error: {error}</div>}
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        {!loading && !error && data.map((row) => (
-          <Card key={row.recordType} className="bg-card/70 backdrop-blur">
-            <CardHeader>
-              <CardTitle className="flex items-center justify-between">
-                <span>{row.recordType}</span>
-                <span className="text-sm text-muted-foreground">Total: {row.totals.total}</span>
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3">
+        {!loading && !error && data.map((row) => {
+          const workflowType = row.recordType.toLowerCase().replace(/\s+/g, "-");
+          return (
+            <Link key={row.recordType} href={`/workflows/${workflowType}`}>
+              <Card className="bg-card/70 backdrop-blur cursor-pointer hover:bg-card/80 transition-colors h-full">
+                <CardHeader>
+                  <CardTitle className="flex items-center justify-between">
+                    <span>{row.recordType}</span>
+                    <span className="text-sm text-muted-foreground">Total: {row.totals.total}</span>
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-3">
               <div className="grid grid-cols-2 gap-2 text-sm">
                 <Metric label="Leads" value={row.totals.leads} />
                 <Metric label="Estimating" value={row.totals.estimating} />
@@ -111,8 +115,10 @@ export default function JobTypesPage() {
                 </div>
               )}
             </CardContent>
-          </Card>
-        ))}
+              </Card>
+            </Link>
+          );
+        })}
       </div>
     </div>
   );
