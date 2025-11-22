@@ -88,6 +88,7 @@ export function WorkflowDetail({ workflowType, workflowName, statuses }: Workflo
             {statuses.map((status, idx) => {
               const nextStatus = statuses[idx + 1];
               const conversionRate = data?.conversions?.[status.name] || 0;
+              const lossRate = data?.lossRates?.[status.name] || 0;
               const avgDays = data?.avgDays?.[status.name] || 0;
               const count = data?.statusCounts?.[status.name] || 0;
 
@@ -112,11 +113,19 @@ export function WorkflowDetail({ workflowType, workflowName, statuses }: Workflo
                       </div>
                     </div>
                     {nextStatus && (
-                      <div className="flex items-center gap-3 ml-4">
+                      <div className="flex items-center gap-6 ml-4">
                         <div className="text-right">
+                          <div className="text-sm text-white/60 mb-2">Success Rate</div>
                           <div className="text-3xl font-bold text-emerald-400">{conversionRate}%</div>
-                          <div className="text-xs text-white/50">convert to next</div>
+                          <div className="text-xs text-white/50">advance to next</div>
                         </div>
+                        {lossRate > 0 && (
+                          <div className="text-right">
+                            <div className="text-sm text-white/60 mb-2">Loss Rate</div>
+                            <div className="text-3xl font-bold text-red-400">{lossRate}%</div>
+                            <div className="text-xs text-white/50">lost from here</div>
+                          </div>
+                        )}
                         <ArrowRight className="h-6 w-6 text-emerald-400/50" />
                       </div>
                     )}

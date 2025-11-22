@@ -436,10 +436,22 @@ export async function GET(
     });
 
     // Calculate conversion rates between statuses
+    // Track which jobs lost from each status
+    const jobsLostFromStatus: Record<string, number> = {};
+    allStatuses.forEach(status => {
+      jobsLostFromStatus[status] = 0;
+    });
+
     Object.entries(jobProgression).forEach(([jobId, statuses]) => {
       for (let i = 0; i < statuses.length; i++) {
         const currentStatus = statuses[i];
         conversionAttempts[currentStatus] = (conversionAttempts[currentStatus] || 0) + 1;
+
+        // Check if this job ultimately went to Lost
+        const finalStatus = statuses[statuses.length - 1];
+        if (finalStatus === "Lost" || finalStatus === "Hold" || finalStatus === "Rehash") {
+          jobsLostFromStatus[currentStatus] = (jobsLostFromStatus[currentStatus] || 0) + 1;
+        }
 
         if (i < statuses.length - 1) {
           conversions[currentStatus] = (conversions[currentStatus] || 0) + 1;
@@ -448,10 +460,22 @@ export async function GET(
     });
 
     // Format conversion rates as percentages
+    // Conversion rate = (jobs that advanced from status) / (total jobs at status)
     const conversionRates: Record<string, number> = {};
     Object.entries(conversionAttempts).forEach(([status, attempts]) => {
       if (attempts > 0) {
         conversionRates[status] = Math.round((conversions[status] / attempts) * 100);
+      }
+    });
+
+    // Calculate loss rates for each status
+    const lossRates: Record<string, number> = {};
+    Object.entries(jobsLostFromStatus).forEach(([status, lostCount]) => {
+      const attempts = conversionAttempts[status] || 0;
+      if (attempts > 0) {
+        lossRates[status] = Math.round((lostCount / attempts) * 100);
+      } else {
+        lossRates[status] = 0;
       }
     });
 
@@ -476,6 +500,7 @@ export async function GET(
       lostJobs,
       completedJobs,
       conversions: conversionRates,
+      lossRates: lossRates,
       avgDays: avgDaysInStatus,
       statusCounts,
     };
