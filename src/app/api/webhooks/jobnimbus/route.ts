@@ -3,6 +3,15 @@ import { getPool } from "@/lib/db";
 
 export const runtime = "nodejs";
 
+export async function GET() {
+    return NextResponse.json({
+        status: "ok",
+        endpoint: "/api/webhooks/jobnimbus",
+        timestamp: new Date().toISOString(),
+        message: "JobNimbus webhook endpoint is active",
+    });
+}
+
 const stageMap: Record<string, string> = {
     "Lead": "Lead",
     "Contacting": "Lead",
@@ -35,27 +44,60 @@ function toDate(epochSeconds?: number | null) {
 }
 
 export async function POST(request: NextRequest) {
+    const requestId = Math.random().toString(36).substring(7);
+    console.log(`[${requestId}] JobNimbus webhook received`, {
+        method: request.method,
+        url: request.url,
+        headers: Object.fromEntries(request.headers.entries()),
+        timestamp: new Date().toISOString(),
+    });
+
     try {
         const configuredSecret = process.env.JOBNIMBUS_WEBHOOK_SECRET;
+        console.log(`[${requestId}] Secret check:`, {
+            hasConfiguredSecret: !!configuredSecret,
+            hasHeaderSecret: !!request.headers.get("x-jn-secret"),
+        });
+
         if (configuredSecret) {
             const headerSecret = request.headers.get("x-jn-secret");
             if (headerSecret !== configuredSecret) {
+                console.log(`[${requestId}] Auth failed: secret mismatch`);
                 return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
             }
         }
 
         const envelope = await request.json();
+        console.log(`[${requestId}] Parsed payload:`, {
+            hasBody: !!envelope.body,
+            envelopeKeys: Object.keys(envelope),
+            bodyKeys: envelope.body ? Object.keys(envelope.body) : null,
+        });
+
         const job = envelope.body ?? envelope;
 
+        console.log(`[${requestId}] Job data:`, {
+            jnid: job.jnid,
+            type: job.type,
+            record_type_name: job.record_type_name,
+            status_name: job.status_name,
+            number: job.number,
+        });
+
         if (!job || job.type !== "job") {
+            console.log(`[${requestId}] Skipped: Not a job payload`, { type: job?.type });
             return NextResponse.json({ skipped: true, reason: "Not a job payload" });
         }
 
-        if (job.record_type_name !== "Roof Replacement") {
-            return NextResponse.json({ skipped: true, reason: "Non-roof workflow" });
-        }
+        // Accept all job record types (Roof Replacement, Insurance, Repairs, Real Estate, etc.)
+        // Previously filtered to Roof Replacement only, which prevented other job types from being ingested
 
         const stage = stageMap[job.status_name] || "Unknown";
+        console.log(`[${requestId}] Processing job:`, {
+            jnid: job.jnid,
+            status: job.status_name,
+            stage,
+        });
 
         const pool = getPool();
         const client = await pool.connect();
@@ -136,16 +178,19 @@ export async function POST(request: NextRequest) {
             );
 
             await client.query("COMMIT");
+            console.log(`[${requestId}] DB transaction committed successfully`);
         } catch (dbErr) {
             await client.query("ROLLBACK");
+            console.error(`[${requestId}] DB error:`, dbErr);
             throw dbErr;
         } finally {
             client.release();
         }
 
+        console.log(`[${requestId}] Webhook processed successfully`, { stage });
         return NextResponse.json({ ok: true, stage });
     } catch (error) {
-        console.error("Webhook handler error", error);
+        console.error(`[${requestId}] Webhook handler error:`, error);
         return NextResponse.json(
             {
                 error: "Failed to process webhook",

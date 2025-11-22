@@ -99,10 +99,39 @@ export async function GET(request: Request) {
             }
         };
 
+        // Log filtering diagnostics
+        const jobsBeforeFilter = jobs.length;
+        const roofReplacementBeforeFilter = jobs.filter((j: any) => j.record_type_name === "Roof Replacement").length;
+
         contacts = contacts.filter((c: any) => filterByRep(c)); // Note: Contacts might not have sales_rep, need to check raw data if possible or skip filtering for contacts if not applicable
         jobs = jobs.filter(filterByRep);
         estimates = estimates.filter(filterByRep);
         invoices = invoices.filter(filterByRep);
+
+        const roofReplacementAfterFilter = jobs.filter((j: any) => j.record_type_name === "Roof Replacement").length;
+        const jobsAssignedToBob = jobsBeforeFilter - jobs.length;
+
+        console.log(`[METRICS] Filtering diagnostics for view: ${view}`, {
+            jobsBeforeFilter,
+            jobsAfterFilter: jobs.length,
+            roofReplacementBeforeFilter,
+            roofReplacementAfterFilter,
+            jobsAssignedToBob,
+        });
+
+        // Debug log for API response - will be initialized below with other diagnostic logs
+        const debugLog: any[] = [
+            {
+                msg: "Filtering Summary",
+                view,
+                totalJobsFromAPI: jobsBeforeFilter,
+                jobsAfterFiltering: jobs.length,
+                filtered_out_jobs: jobsAssignedToBob,
+                roof_replacement_before: roofReplacementBeforeFilter,
+                roof_replacement_after: roofReplacementAfterFilter,
+                roof_replacement_filtered: roofReplacementBeforeFilter - roofReplacementAfterFilter,
+            }
+        ];
 
         // Calculate Metrics
         // 1. Revenue (Sum of paid invoices)
@@ -117,9 +146,6 @@ export async function GET(request: Request) {
         const sevenDaysAgo = new Date();
         sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
         const newLeads = contacts.filter((c: any) => new Date(c.createdAt) > sevenDaysAgo).length;
-
-        // Debug collection
-        const debugLog: any[] = [];
 
         // 2b. Avg Daily Revenue (YTD Revenue / Days passed)
         const now = new Date();
