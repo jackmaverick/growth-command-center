@@ -3,6 +3,7 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ArrowRight, TrendingUp, Clock } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
+import { KeyConversions } from "./key-conversions";
 
 interface WorkflowDetailProps {
   workflowType: string;
@@ -28,7 +29,7 @@ export function WorkflowDetail({ workflowType, workflowName, statuses }: Workflo
     <div className="space-y-8">
       <div>
         <h1 className="text-3xl font-bold text-white tracking-tight">{workflowName} Workflow</h1>
-        <p className="text-white/60 mt-1">Conversion metrics and cycle time analysis</p>
+        <p className="text-white/60 mt-1">Conversion metrics, conversion paths, and cycle time analysis</p>
       </div>
 
       {/* Summary Stats */}
@@ -74,6 +75,9 @@ export function WorkflowDetail({ workflowType, workflowName, statuses }: Workflo
           </CardContent>
         </Card>
       </div>
+
+      {/* Key Conversion Paths */}
+      <KeyConversions data={data?.keyConversions} />
 
       {/* Conversion Funnel */}
       <Card className="bg-white/5 backdrop-blur-md border-white/10 text-white">

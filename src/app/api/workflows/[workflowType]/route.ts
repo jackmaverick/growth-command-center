@@ -479,6 +479,57 @@ export async function GET(
       }
     });
 
+    // Build conversion matrix: track transitions between ALL status pairs
+    // This captures non-linear progressions like Lead -> Estimating (skipping Appointment Scheduled)
+    const transitionCounts: Record<string, Record<string, number>> = {};
+    const transitionPercentages: Record<string, Record<string, number>> = {};
+
+    // Initialize matrix
+    allStatuses.forEach(fromStatus => {
+      transitionCounts[fromStatus] = {};
+      transitionPercentages[fromStatus] = {};
+      allStatuses.forEach(toStatus => {
+        transitionCounts[fromStatus][toStatus] = 0;
+      });
+    });
+
+    // Count transitions
+    Object.entries(jobProgression).forEach(([jobId, statuses]) => {
+      for (let i = 0; i < statuses.length - 1; i++) {
+        const fromStatus = statuses[i];
+        const toStatus = statuses[i + 1];
+        if (transitionCounts[fromStatus]) {
+          transitionCounts[fromStatus][toStatus]++;
+        }
+      }
+    });
+
+    // Calculate transition percentages
+    Object.entries(transitionCounts).forEach(([fromStatus, destinations]) => {
+      const totalFrom = Object.values(destinations).reduce((a, b) => a + b, 0);
+      Object.entries(destinations).forEach(([toStatus, count]) => {
+        if (totalFrom > 0) {
+          transitionPercentages[fromStatus][toStatus] = Math.round((count / totalFrom) * 100);
+        } else {
+          transitionPercentages[fromStatus][toStatus] = 0;
+        }
+      });
+    });
+
+    // Get key conversions you care about (Lead -> specific statuses)
+    const keyConversions: Record<string, number> = {
+      'Lead→Appointment Scheduled': transitionPercentages['Lead']?.['Appointment Scheduled'] || 0,
+      'Lead→Estimating': transitionPercentages['Lead']?.['Estimating'] || 0,
+      'Appointment Scheduled→Estimating': transitionPercentages['Appointment Scheduled']?.['Estimating'] || 0,
+      'Estimating→Estimate Sent': transitionPercentages['Estimating']?.['Estimate Sent'] || 0,
+      'Estimate Sent→Signed Contract': transitionPercentages['Estimate Sent']?.['Signed Contract'] || 0,
+      'Signed Contract→Pre-Production': transitionPercentages['Signed Contract']?.['Pre-Production'] || 0,
+      'Pre-Production→In Progress': transitionPercentages['Pre-Production']?.['In Progress'] || 0,
+      'In Progress→Job Completed': transitionPercentages['In Progress']?.['Job Completed'] || 0,
+      'Estimating→Lost': transitionPercentages['Estimating']?.['Lost'] || 0,
+      'Estimate Sent→Lost': transitionPercentages['Estimate Sent']?.['Lost'] || 0,
+    };
+
     // Active jobs = jobs not in Completed or Lost stage
     const activeJobs = jobs.filter(j => !j.is_closed).length;
 
@@ -503,6 +554,8 @@ export async function GET(
       lossRates: lossRates,
       avgDays: avgDaysInStatus,
       statusCounts,
+      keyConversions: keyConversions,
+      transitionMatrix: transitionPercentages,
     };
 
     return NextResponse.json(data);
