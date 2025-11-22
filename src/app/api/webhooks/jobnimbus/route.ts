@@ -64,6 +64,9 @@ export async function POST(request: NextRequest) {
         const owners: any[] = Array.isArray(job.owners) ? job.owners : [];
         const ownerIds: string[] = owners.map((o: any) => o?.id ?? o).filter(Boolean);
 
+        // Contacts are not ingested yet; avoid FK violation by leaving primary_contact_id null
+        const primaryContactId: string | null = null;
+
         const dateCreated = toDate(job.date_created);
         const dateStatusChange = toDate(job.date_status_change ?? job.date_updated ?? job.date_created);
 
@@ -110,7 +113,7 @@ export async function POST(request: NextRequest) {
                     job.record_type_name ?? null,
                     job.status_name ?? null,
                     stage,
-                    job.primary?.id ?? null,
+                    primaryContactId,
                     job.sales_rep ?? job.sales_rep_name ?? null,
                     job.source_name ?? null,
                     dateCreated,
