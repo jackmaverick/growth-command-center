@@ -1,6 +1,30 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getPool } from "@/lib/db";
 
+type TimePeriod = "weekly" | "monthly" | "quarterly" | "yearly";
+
+function getDateRangeForPeriod(period: TimePeriod): { startDate: Date; endDate: Date } {
+  const endDate = new Date();
+  const startDate = new Date();
+
+  switch (period) {
+    case "weekly":
+      startDate.setDate(endDate.getDate() - 7);
+      break;
+    case "monthly":
+      startDate.setMonth(endDate.getMonth() - 1);
+      break;
+    case "quarterly":
+      startDate.setMonth(endDate.getMonth() - 3);
+      break;
+    case "yearly":
+      startDate.setFullYear(endDate.getFullYear() - 1);
+      break;
+  }
+
+  return { startDate, endDate };
+}
+
 // Legacy mock data as fallback
 const workflowData: Record<string, any> = {
   "roof-replacement": {
@@ -299,6 +323,8 @@ export async function GET(
   { params }: { params: Promise<{ workflowType: string }> }
 ) {
   const { workflowType } = await params;
+  const searchParams = request.nextUrl.searchParams;
+  const period = (searchParams.get("period") || "monthly") as TimePeriod;
 
   try {
     const pool = getPool();
@@ -324,22 +350,24 @@ export async function GET(
       );
     }
 
-    // Query 1: Get all jobs for this record type
+    const { startDate, endDate } = getDateRangeForPeriod(period);
+
+    // Query 1: Get all jobs for this record type within the time period
     const jobsResult = await pool.query(
       `SELECT id, stage, is_won, is_lost, is_closed, date_created, date_status_change
        FROM jobs
-       WHERE record_type_name = $1`,
-      [recordTypeName]
+       WHERE record_type_name = $1 AND date_created >= $2 AND date_created <= $3`,
+      [recordTypeName, startDate, endDate]
     );
     const jobs = jobsResult.rows;
 
-    // Query 2: Get status history to build conversion funnel
+    // Query 2: Get status history to build conversion funnel (filtered by time period)
     const historyResult = await pool.query(
       `SELECT job_id, status_name, stage, changed_at
        FROM job_status_history
-       WHERE job_id IN (SELECT id FROM jobs WHERE record_type_name = $1)
+       WHERE job_id IN (SELECT id FROM jobs WHERE record_type_name = $1 AND date_created >= $2 AND date_created <= $3)
        ORDER BY job_id, changed_at`,
-      [recordTypeName]
+      [recordTypeName, startDate, endDate]
     );
     const history = historyResult.rows;
 
@@ -423,15 +451,64 @@ export async function GET(
       avgDaysInStatus[status] = 0;
     });
 
-    // For each job, track its progression
+    // Stage progression mapping
+    const stageMap: Record<string, string> = {
+      "Lead": "Lead",
+      "Contacting": "Lead",
+      "Appointment Scheduled": "Lead",
+      "Needs Rescheduling": "Lead",
+      "Estimating": "Estimating",
+      "Estimate Sent": "Estimating",
+      "Bob's Estimate Sent": "Estimating",
+      "Signed Contract": "Sold",
+      "Pre-Production": "Production",
+      "Ready for Install": "Production",
+      "Job Scheduled": "Production",
+      "In Progress": "Production",
+      "Job Completed": "Production",
+      "Final Walk Through": "Production",
+      "Invoiced Customer": "Invoicing",
+      "Back End Audit": "Invoicing",
+      "Pay the Crew": "Invoicing",
+      "Bob's Collection": "Invoicing",
+      "Paid & Closed": "Completed",
+      "Request Review": "Completed",
+      "Hold": "Lost",
+      "Rehash": "Lost",
+      "Lost": "Lost"
+    };
+
+    // Define stage progression order for tracking advancement
+    const stagePriorityMap: Record<string, number> = {
+      "Lead": 0,
+      "Estimating": 1,
+      "Sold": 2,
+      "Production": 3,
+      "Invoicing": 4,
+      "Completed": 5,
+      "Lost": -1 // Lost can happen at any point
+    };
+
+    // For each job, track its progression through statuses and max stage reached
     const jobProgression: Record<string, string[]> = {};
+    const jobMaxStage: Record<string, number> = {};
+
     history.forEach(entry => {
       const { job_id, status_name } = entry;
       if (!jobProgression[job_id]) {
         jobProgression[job_id] = [];
+        jobMaxStage[job_id] = -1;
       }
       if (!jobProgression[job_id].includes(status_name)) {
         jobProgression[job_id].push(status_name);
+      }
+
+      const stage = stageMap[status_name];
+      if (stage) {
+        const stagePriority = stagePriorityMap[stage];
+        if (stagePriority > jobMaxStage[job_id]) {
+          jobMaxStage[job_id] = stagePriority;
+        }
       }
     });
 
@@ -455,6 +532,22 @@ export async function GET(
 
         if (i < statuses.length - 1) {
           conversions[currentStatus] = (conversions[currentStatus] || 0) + 1;
+        }
+      }
+
+      // Count jobs that passed through skipped stages
+      // If a job reached "Production" stage, it passed through "Sold" even if it skipped "Signed Contract" status
+      const maxStagePriority = jobMaxStage[jobId];
+
+      // Mark all stages up to the max stage as "passed" for conversion counting
+      for (const status of statuses) {
+        const stage = stageMap[status];
+        if (stage && stage !== "Lost") {
+          const stagePriority = stagePriorityMap[stage];
+          // If this status's stage is less than the max stage reached, this job "passed" this stage
+          if (stagePriority < maxStagePriority) {
+            conversions[status] = (conversions[status] || 0) + 1;
+          }
         }
       }
     });
@@ -533,11 +626,11 @@ export async function GET(
     // Active jobs = jobs not in Completed or Lost stage
     const activeJobs = jobs.filter(j => !j.is_closed).length;
 
-    // YTD Revenue - sum invoices for this job type
+    // Revenue for period - sum invoices for this job type within the time period
     const revenueResult = await pool.query(
       `SELECT COALESCE(SUM(approved_invoice_total), 0) as total FROM jobs
-       WHERE record_type_name = $1 AND is_won = true`,
-      [recordTypeName]
+       WHERE record_type_name = $1 AND is_won = true AND date_created >= $2 AND date_created <= $3`,
+      [recordTypeName, startDate, endDate]
     );
     const ytdRevenue = parseFloat(revenueResult.rows[0]?.total || 0);
 

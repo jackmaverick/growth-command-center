@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ArrowRight, TrendingUp, Clock } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
@@ -11,25 +12,46 @@ interface WorkflowDetailProps {
   statuses: Array<{ name: string; stage: string }>;
 }
 
-async function fetchWorkflowMetrics(workflowType: string) {
-  const res = await fetch(`/api/workflows/${workflowType}`);
+type TimePeriod = "weekly" | "monthly" | "quarterly" | "yearly";
+
+async function fetchWorkflowMetrics(workflowType: string, period: TimePeriod) {
+  const res = await fetch(`/api/workflows/${workflowType}?period=${period}`);
   if (!res.ok) throw new Error("Failed to fetch workflow metrics");
   return res.json();
 }
 
 export function WorkflowDetail({ workflowType, workflowName, statuses }: WorkflowDetailProps) {
+  const [period, setPeriod] = useState<TimePeriod>("monthly");
+
   const { data, isLoading } = useQuery({
-    queryKey: ["workflow", workflowType],
-    queryFn: () => fetchWorkflowMetrics(workflowType),
+    queryKey: ["workflow", workflowType, period],
+    queryFn: () => fetchWorkflowMetrics(workflowType, period),
   });
 
   if (isLoading) return <div className="p-8 text-white">Loading...</div>;
 
   return (
     <div className="space-y-8">
-      <div>
-        <h1 className="text-3xl font-bold text-white tracking-tight">{workflowName} Workflow</h1>
-        <p className="text-white/60 mt-1">Conversion metrics, conversion paths, and cycle time analysis</p>
+      <div className="flex items-start justify-between">
+        <div>
+          <h1 className="text-3xl font-bold text-white tracking-tight">{workflowName} Workflow</h1>
+          <p className="text-white/60 mt-1">Conversion metrics, conversion paths, and cycle time analysis</p>
+        </div>
+        <div className="flex gap-2">
+          {(['weekly', 'monthly', 'quarterly', 'yearly'] as const).map((p) => (
+            <button
+              key={p}
+              onClick={() => setPeriod(p)}
+              className={`px-4 py-2 rounded-lg font-medium transition-colors capitalize ${
+                period === p
+                  ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/50'
+                  : 'bg-white/5 text-white/70 border border-white/10 hover:bg-white/10'
+              }`}
+            >
+              {p}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* Summary Stats */}

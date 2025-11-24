@@ -7,6 +7,7 @@ import { SalesFunnelChart } from "@/components/dashboard/sales-funnel-chart";
 import { RevenueByJobTypeChart } from "@/components/dashboard/revenue-job-type-chart";
 import { WorkflowVelocityTable } from "@/components/dashboard/workflow-velocity-table";
 import { ReferralLeaderboard } from "@/components/dashboard/referral-leaderboard";
+import { StageConversionPipeline } from "@/components/dashboard/stage-conversion-pipeline";
 import { useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -120,6 +121,9 @@ export default function DashboardPage() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Stage Conversion Pipeline */}
+      <StageConversionPipeline period="monthly" />
 
       <div className="grid grid-cols-1 lg:grid-cols-7 gap-6">
         <div className="col-span-4">
